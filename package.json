@@ -1,0 +1,14 @@
+{
+  "name": "cloudflare-webrtc-screen-share",
+  "private": true,
+  "version": "0.2.0",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types"
+  },
+  "devDependencies": {
+    "wrangler": "^4.40.0"
+  }
+}

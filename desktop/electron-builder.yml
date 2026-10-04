@@ -1,0 +1,22 @@
+appId: dev.janshare.desktop
+productName: Janshare
+directories:
+  output: release
+files:
+  - out/**
+  - resources/**
+  - package.json
+asarUnpack:
+  - resources/**
+protocols:
+  - name: Janshare
+    schemes:
+      - janshare
+win:
+  icon: resources/icon.png
+  target:
+    - nsis
+nsis:
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
