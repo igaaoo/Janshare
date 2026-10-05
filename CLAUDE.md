@@ -1,10 +1,11 @@
 # CLAUDE.md
 
-Janshare: app desktop (Windows) de compartilhamento de tela P2P para grupos pequenos de pessoas que se conhecem, gratuito e open source. 1 transmissor + até 7 espectadores por sala, sem voz. Cloudflare Worker + Durable Object fazem **apenas signaling**; o vídeo vai direto entre os PCs via WebRTC.
+Janshare - lightweight peer-to-peer screen sharing: app desktop (Windows) de compartilhamento de tela P2P para grupos pequenos de pessoas que se conhecem, gratuito e open source, em inglês e português. 1 transmissor + até 7 espectadores por sala, sem voz. Cloudflare Worker + Durable Object fazem **apenas signaling**; o vídeo vai direto entre os PCs via WebRTC.
 
 Produção (signaling): https://janshare.igaaoo.workers.dev
 
 ## Estrutura
+
 - `src/index.ts`: Worker + DO `Room` (signaling, `/ice-servers`, landing page que abre `janshare://`).
 - `src/stats.ts`: DO `Stats` (instância única "global", SQLite) com estatísticas anônimas; `src/stats-page.ts`: página pública `/stats` (dados brutos em `/stats.json`).
 - `desktop/`: app Electron + React + TS (electron-vite). Pacote npm separado.
@@ -12,8 +13,11 @@ Produção (signaling): https://janshare.igaaoo.workers.dev
   - `src/preload/index.ts`: ponte `window.janshare` (tipos em `src/renderer/src/env.d.ts`).
   - `src/renderer/src/lib/room.ts`: `RoomClient`, toda a lógica de WebSocket/WebRTC.
   - `src/renderer/src/components/`: UI (Stage, StreamPlayer, GoLiveModal, SettingsModal).
+  - `src/renderer/src/lib/i18n.tsx`: traduções (dicionários `en` e `pt`, `t()`, `I18nProvider`/`useI18n`).
+- `README.md` (inglês, principal) e `README.pt-BR.md` (português): mantenha os dois em sincronia.
 
 ## Comandos
+
 Raiz (Worker): `npm run dev` (wrangler dev em :8787), `npm run deploy`, `npm run types`.
 `desktop/`: `npm run dev` (app com HMR), `npm run typecheck`, `npm run build`, `npm run dist` (gera `release/Janshare-Setup-x.y.z.exe` sem publicar), `npm run release` (build + `scripts/release.mjs`, que publica no GitHub Releases; token em `GH_TOKEN` ou `desktop/electron-builder.env`; `node scripts/release.mjs --dry-run` só confere).
 
@@ -22,6 +26,7 @@ Não há suíte de testes. Para validar: typecheck dos dois lados; para o Worker
 Para testar o app contra o Worker local, mude o servidor nas Configurações para `http://127.0.0.1:8787`.
 
 ## Requisitos de produto (não quebrar)
+
 - Sem login/cadastro; perfil (nome, cor) e salas recentes ficam no `localStorage`.
 - O dono não participa das chamadas; nada pode depender de ele estar online.
 - A Cloudflare **não** transporta mídia quando houver P2P. TURN é só fallback (o ICE já prefere host/srflx).
@@ -30,12 +35,23 @@ Para testar o app contra o Worker local, mude o servidor nas Configurações par
 - Uso destinado a maiores de 18 anos (README, seção "Uso responsável").
 
 ## Posicionamento (cuidado jurídico)
+
 Em agosto de 2026 a ANPD suspendeu no Brasil o Go Live, as chamadas de vídeo e o compartilhamento de tela do Discord com base no ECA Digital (Lei 15.211/2025, proteção de crianças e adolescentes; multas de até R$ 50 milhões). Por isso:
+
 - **Nunca** apresentar o Janshare como substituto do Discord, do Go Live ou como forma de contornar a suspensão (README, textos do app, landing page, releases, commits). Descrever como "compartilhamento de tela P2P para equipes e amigos".
 - Citar o Discord só quando for fato técnico (ex.: o áudio exclui o som do Discord).
 - Novos recursos que aumentem o alcance a desconhecidos (salas públicas, descoberta, chat com estranhos) exigem rever as obrigações do ECA Digital antes.
 
+## Idiomas (inglês e português)
+
+- Nenhum texto visível fixo nos componentes: tudo passa por `t("chave")` de `useI18n()`. Chaves novas entram em `en` (fonte das chaves) **e** em `pt`; o TypeScript acusa se faltar no `pt`.
+- O idioma fica em `settings.language` (padrão: idioma do sistema, `detectLanguage`); o `SettingsModal` mostra o idioma escolhido antes de salvar.
+- `RoomClient` e o main não montam frases: emitem códigos (`RoomEvent` `error.code`, `Error("source-not-found")`) que a interface traduz.
+- Páginas do Worker (convite e `/stats`) escolhem o idioma por `?lang=en|pt` ou `Accept-Language` (`pageLanguage`).
+- Commits e textos de release em inglês.
+
 ## Protocolo de signaling (JSON via WS `/ws/:roomId`)
+
 - Cliente → servidor: `hello {name,color,secret}` (primeiro envio; reenviar atualiza nome/cor, mas não a key). O servidor publica `key` = hash SHA-256 do `secret` em cada peer; o segredo nunca sai do servidor, `go-live`, `stop-live`, `"ping"` (texto puro; o DO responde `"pong"` via auto-response, sem acordar).
 - Servidor → cliente: `welcome {self, peers}`, `peer-joined`, `peer-updated`, `peer-left {id}`, `error {code}` (`room-full`, `already-live`).
 - Relay com `to` (o servidor troca por `from`): `watch`, `unwatch`, `offer`, `answer`, `ice-candidate`. O servidor repassa só os campos conhecidos (`relayPayload`) e descarta formatos inválidos; o cliente valida de novo (`isSdp`/`isCandidate`).
@@ -43,6 +59,7 @@ Em agosto de 2026 a ANPD suspendeu no Brasil o Go Live, as chamadas de vídeo e 
 - Só um peer pode estar `live` por sala. O espectador pede `watch` e o **transmissor cria a offer** (uma RTCPeerConnection por espectador, em malha).
 
 ## Detalhes importantes
+
 - DO usa a WebSocket Hibernation API: estado só no `serializeAttachment` de cada socket, nunca em campos da instância.
 - Transmissor: transceivers fixos [vídeo, áudio] `sendonly`, então trocar a fonte ou o áudio usa só `replaceTrack`, sem renegociar. Bitrate via `sendEncodings`/`setParameters` (`bitrateFor`).
 - Reconexão: o heartbeat detecta a queda, o cliente reconecta com backoff, volta ao ar se estava transmitindo e quem assistia volta a assistir o transmissor com a mesma `key` (janela de 60s; nunca pelo nome, que pode ser copiado). Os ids de peer mudam a cada conexão.

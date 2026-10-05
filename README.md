@@ -2,138 +2,156 @@
 
 <img src="desktop/resources/icon.svg" width="88" alt="Janshare" />
 
-# Janshare
+# Janshare - lightweight peer-to-peer screen sharing
 
-**Compartilhamento de tela P2P para Windows: crie uma sala, mande o link e transmita.**<br>
-O vídeo vai direto de um computador para o outro. Sem cadastro, sem servidor de mídia, sem custo.
+**Create a room, send the link, go live.**<br>
+Video travels straight from one computer to another. No sign-up, no media servers, no cost.
 
-[**Baixar para Windows**](https://github.com/igaaoo/Janshare/releases/latest) · [Como funciona](#como-funciona) · [Segurança e privacidade](#segurança-e-privacidade) · [Desenvolvimento](#desenvolvimento)
+[**Download for Windows**](https://github.com/igaaoo/Janshare/releases/latest) · [How it works](#how-it-works) · [Security & privacy](#security--privacy) · [Development](#development)
+
+English · [Português](README.pt-BR.md)
 
 </div>
 
 <br>
 
-![Janshare em uso: sala com três pessoas assistindo a uma transmissão em 1080p, com o painel de estatísticas mostrando conexão P2P direta](public/example.png)
+![Janshare in use: a room with three people watching a 1080p stream, with the stats panel showing a direct P2P connection](public/example.png)
 
-## Funcionalidades
+## Features
 
-**Transmissão**
-- **Janela ou tela inteira**, com miniaturas ao vivo no seletor.
-- **Qualidade ajustável:** 720p, 1080p ou resolução original, a 15, 30 ou 60 FPS. O app estima o upload necessário antes de você entrar ao vivo.
-- **Som do computador sem eco:** o áudio do sistema é transmitido **sem o som do Discord**, para quem já está na call não ouvir as vozes repetidas (captura nativa do Windows, com volta automática ao áudio completo se não for possível).
-- **Troca de fonte sem derrubar ninguém:** muda de janela, de qualidade ou liga e desliga o áudio no meio da transmissão.
-- **Atalho global** `Ctrl+Shift+S` para começar ou parar de transmitir de qualquer lugar.
+**Streaming**
 
-**Assistindo**
-- **Player com tela cheia, volume e "manter no topo"**, para assistir enquanto usa outro app.
-- **Estatísticas em tempo real:** resolução, FPS, bitrate, latência e tipo de conexão (P2P direto ou relay).
-- **Reconexão automática:** se a internet oscilar, o app reconecta sozinho e volta a assistir a mesma transmissão.
+- **Share a window or your whole screen**, with live thumbnails in the picker.
+- **Adjustable quality:** 720p, 1080p or native resolution, at 15, 30 or 60 FPS. The app estimates the upload you need before you go live.
+- **Computer audio without echo:** system audio is streamed **without Discord's sound**, so people already on a voice call don't hear voices twice (native Windows capture, falling back to full system audio when that isn't possible).
+- **Switch sources without dropping anyone:** change window, quality or toggle audio mid-stream.
+- **Global shortcut** `Ctrl+Shift+S` to start or stop streaming from anywhere.
 
-**Salas**
-- **Até 8 pessoas por sala:** 1 transmitindo e até 7 assistindo.
-- **Convite por link:** quem recebe clica e o app abre direto na sala (`janshare://`). Também dá para colar o link ou o código.
-- **Salas recentes** na barra lateral e **perfil com nome e cor**, salvos só no seu computador.
-- **Notificações** quando alguém entra, sai ou começa a transmitir.
+**Watching**
+
+- **Player with fullscreen, volume and "keep on top"**, so you can watch while using another app.
+- **Live stats:** resolution, FPS, bitrate, latency and connection type (direct P2P or relay).
+- **Automatic reconnection:** if the connection drops, the app reconnects and resumes the same stream on its own.
+
+**Rooms**
+
+- **Up to 8 people per room:** 1 streaming and up to 7 watching.
+- **Invite by link:** recipients click it and the app opens straight into the room (`janshare://`). Pasting the link or room code also works.
+- **Recent rooms** in the sidebar and a **profile with name and color**, stored only on your computer.
+- **Notifications** when someone joins, leaves or starts streaming.
 
 **App**
-- **Atualização automática:** novas versões baixam em segundo plano e instalam com um clique (nunca no meio de uma transmissão).
-- **Sem conta e sem login:** abriu, escolheu um nome, está pronto.
 
-## Como usar
+- **English and Portuguese**, following your system language, switchable in Settings.
+- **Automatic updates:** new versions download in the background and install with one click (never in the middle of a stream).
+- **No account, no login:** open it, pick a name, you're ready.
 
-1. Baixe o instalador na página de [Releases](https://github.com/igaaoo/Janshare/releases/latest) e execute.
-   > O instalador ainda não tem assinatura digital, então o Windows SmartScreen pode avisar na primeira vez: clique em **Mais informações → Executar assim mesmo**.
-2. Escolha seu nome e sua cor.
-3. Clique em **+** para **criar uma sala**: o link de convite é copiado automaticamente.
-4. Envie o link. Quem clicar entra direto na sala.
-5. Clique em **Compartilhar tela**, escolha a janela, a qualidade e o áudio, e clique em **Ao vivo**.
-6. Os outros clicam em **Assistir transmissão**.
+## Getting started
 
-## Como funciona
+1. Download the installer from [Releases](https://github.com/igaaoo/Janshare/releases/latest) and run it.
+   > The installer isn't code-signed yet, so Windows SmartScreen may warn you the first time: click **More info → Run anyway**.
+2. Pick your name and color.
+3. Click **+** to **create a room**: the invite link is copied automatically.
+4. Send the link. Whoever clicks it joins the room directly.
+5. Click **Share screen**, choose the window, quality and audio, then **Go live**.
+6. Everyone else clicks **Watch stream**.
+
+## How it works
 
 ```
                  ┌──────────── Cloudflare ─────────────┐
-                 │  Worker + Durable Object por sala   │
-                 │  (só apresenta os participantes)    │
+                 │  Worker + one Durable Object/room   │
+                 │  (only introduces the peers)        │
                  └────────▲─────────────────▲──────────┘
                  signaling │ (WebSocket)     │
                            │                 │
           ┌────────────────┴──┐         ┌────┴──────────────────┐
-          │ Quem transmite    │═════════│ Quem assiste (até 7)  │
-          │ Electron + React  │  vídeo  │ Electron + React      │
+          │ Streamer          │═════════│ Viewers (up to 7)     │
+          │ Electron + React  │  video  │ Electron + React      │
           └───────────────────┘   P2P   └───────────────────────┘
-                              (WebRTC, direto entre os PCs)
+                              (WebRTC, straight between PCs)
 ```
 
-- **O servidor só faz a apresentação inicial (signaling).** Um Cloudflare Worker com um Durable Object por sala troca as mensagens que os computadores precisam para se encontrar. A partir daí, **vídeo e áudio vão direto entre os PCs** via WebRTC e nunca passam pelo servidor.
-- **Salas hibernam:** com a WebSocket Hibernation API, uma sala parada não consome nada. É isso que mantém o projeto com **custo zero** no plano gratuito da Cloudflare.
-- **Malha (mesh):** quem transmite envia uma cópia para cada espectador. Por isso o limite de 8 pessoas: o upload de quem transmite é o recurso que escala.
-- **Troca de fonte sem renegociar:** os canais de vídeo e áudio ficam fixos e a fonte é trocada com `replaceTrack`; a qualidade é ajustada por `setParameters`.
+- **The server only handles signaling.** A Cloudflare Worker with one Durable Object per room relays the messages computers need to find each other. From then on, **video and audio flow directly between PCs** over WebRTC and never touch the server.
+- **Rooms hibernate:** with the WebSocket Hibernation API, an idle room costs nothing. That's what keeps the project at **zero cost** on Cloudflare's free tier.
+- **Mesh topology:** the streamer sends one copy to each viewer, hence the 8-person cap: the streamer's upload is the resource that scales.
+- **Source switching without renegotiation:** video and audio transceivers are fixed and sources are swapped with `replaceTrack`; quality is tuned with `setParameters`.
 
-**Stack:** Electron, React e TypeScript (electron-vite) no app; Cloudflare Workers e Durable Objects no servidor; um helper nativo em C++ (WASAPI *process loopback*) para o áudio.
+**Stack:** Electron, React and TypeScript (electron-vite) for the app; Cloudflare Workers and Durable Objects for the server; a native C++ helper (WASAPI _process loopback_) for audio.
 
-## Segurança e privacidade
+**The name:** _Jan_ comes from _janela_, Portuguese for "window", which is exactly what you share.
 
-**O que fica protegido**
-- **Mídia criptografada de ponta a ponta:** WebRTC usa DTLS-SRTP. Nem o servidor nem o provedor de internet conseguem ver o vídeo.
-- **Nada é armazenado:** o servidor não guarda vídeo, áudio, mensagens nem histórico. Perfil e salas recentes ficam só no seu computador.
-- **Salas por convite:** não existe busca nem lista de salas públicas. Os códigos gerados pelo app têm 96 bits aleatórios, impossíveis de adivinhar.
-- **Câmera e microfone sempre bloqueados:** o app só tem permissão para capturar a tela que você escolher. Nenhuma página consegue ligar sua câmera ou seu microfone.
-- **Você decide o que transmite:** nada vai ao ar sem você escolher a fonte no seletor. Links e atalhos nunca iniciam uma transmissão sozinhos.
+## Security & privacy
 
-**Como o app se protege**
-- **Interface isolada:** sandbox do Chromium, `contextIsolation` e sem acesso a Node.js na interface; a ponte com o sistema expõe só ações específicas. O app não navega para fora nem abre janelas.
-- **Mensagens validadas nas duas pontas:** o servidor repassa só campos conhecidos e com formato válido; o app valida de novo antes de usar.
-- **Limites contra abuso:** limite de mensagens por conexão e fila limitada de candidatos de conexão, para ninguém travar o app de outra pessoa.
-- **Sem falsificação de identidade:** o remetente de cada mensagem é definido pelo servidor, e a reconexão automática reconhece o transmissor por uma chave derivada de um segredo da sessão, não pelo nome (que qualquer um poderia copiar). Nomes passam por limpeza de caracteres invisíveis.
+**What's protected**
 
-**O que você precisa saber**
-- **Quem está na sua sala vê seu IP público** quando a conexão de vídeo é estabelecida. É assim que o P2P funciona. Compartilhe salas só com quem você conhece.
-- **Quem tem o link pode entrar.** O app avisa quando alguém começa a assistir.
-- **O áudio do sistema inclui tudo o que toca no PC**, exceto o Discord. Feche o que não quiser transmitir.
-- **Estatísticas anônimas de uso** (contagem de instalações, sessões e transmissões) são enviadas sem nome, IP ou conteúdo; o identificador da instalação é aleatório e só é guardado como hash.
+- **End-to-end encrypted media:** WebRTC uses DTLS-SRTP. Neither the server nor your ISP can see the video.
+- **Nothing is stored:** the server keeps no video, audio, messages or history. Your profile and recent rooms live only on your computer.
+- **Invite-only rooms:** there's no search and no public room list. Codes generated by the app carry 96 random bits and can't be guessed.
+- **Camera and microphone always blocked:** the app can only capture the screen you choose. No page can turn on your camera or microphone.
+- **You decide what goes live:** nothing is streamed until you pick a source in the picker. Links and shortcuts never start a stream on their own.
 
-## Uso responsável
+**How the app defends itself**
 
-O Janshare é destinado a **maiores de 18 anos**, para compartilhar a tela com pessoas que você conhece. É proibido usá-lo para transmitir conteúdo ilegal ou para contato com menores de idade. Para reportar abuso, abra uma [issue](https://github.com/igaaoo/Janshare/issues).
+- **Isolated UI:** Chromium sandbox, `contextIsolation` and no Node.js access in the interface; the bridge to the system exposes only specific actions. The app never navigates away or opens windows.
+- **Messages validated on both ends:** the server relays only known, well-formed fields, and the app validates them again before use.
+- **Abuse limits:** per-connection message rate limits and a capped queue of connection candidates, so no one can freeze someone else's app.
+- **No identity spoofing:** the server sets the sender of every message, and automatic reconnection recognizes the streamer by a key derived from a session secret, not by name (which anyone could copy). Names are stripped of invisible characters.
 
-## Desenvolvimento
+**What you should know**
 
-Pré-requisitos: Node.js 20+ e Windows 10 (versão 2004) ou mais novo. O Visual Studio com C++ só é necessário para recompilar o helper de áudio.
+- **People in your room see your public IP** once the video connection is established. That's how P2P works. Only share rooms with people you know.
+- **Anyone with the link can join.** The app tells you when someone starts watching.
+- **System audio includes everything playing on your PC**, except Discord. Close what you don't want to stream.
+- **Anonymous usage statistics** (install, session and stream counts) are sent without names, IPs or content; the install identifier is random and stored only as a hash.
 
-**Servidor** (raiz do projeto)
+## Responsible use
+
+Janshare is intended for **adults (18+)** sharing their screen with people they know. Using it to stream illegal content or to contact minors is prohibited. To report abuse, open an [issue](https://github.com/igaaoo/Janshare/issues).
+
+## Development
+
+Requirements: Node.js 20+ and Windows 10 (version 2004) or later. Visual Studio with C++ is only needed to rebuild the audio helper.
+
+**Server** (repository root)
+
 ```bash
 npm install
-npm run dev       # Worker local em http://127.0.0.1:8787
-npm run deploy    # publica na Cloudflare (npx wrangler login na primeira vez)
+npm run dev       # local Worker at http://127.0.0.1:8787
+npm run deploy    # publish to Cloudflare (npx wrangler login the first time)
 ```
 
-**App desktop**
+**Desktop app**
+
 ```bash
 cd desktop
 npm install
-npm run dev        # app com recarga automática
+npm run dev        # app with hot reload
 npm run typecheck
-npm run dist       # gera desktop/release/Janshare-Setup-x.y.z.exe
-npm run native     # recompila o helper de áudio (opcional)
+npm run dist       # builds desktop/release/Janshare-Setup-x.y.z.exe
+npm run native     # rebuilds the audio helper (optional)
 ```
 
-Para testar o app contra o servidor local, troque o servidor nas **Configurações** para `http://127.0.0.1:8787`.
+To test the app against the local server, set the server to `http://127.0.0.1:8787` in **Settings**.
 
-**TURN (opcional):** para redes em que a conexão direta falha, configure o Cloudflare Realtime TURN. Sem isso, o app usa só STUN, e o vídeo nunca passa pelo servidor.
+**Translations:** every UI string lives in `desktop/src/renderer/src/lib/i18n.tsx` (English and Portuguese dictionaries); add new keys to both.
+
+**TURN (optional):** for networks where direct connections fail, configure Cloudflare Realtime TURN. Without it the app uses STUN only, and video never goes through the server.
+
 ```bash
 npx wrangler secret put TURN_KEY_ID
 npx wrangler secret put TURN_KEY_API_TOKEN
 ```
 
-**Publicar uma versão**
-1. Aumente `version` em `desktop/package.json`.
-2. Crie `desktop/electron-builder.env` com `GH_TOKEN=...`: um token do GitHub com **Contents: Read and write** neste repositório. O arquivo é ignorado pelo Git.
-3. Rode `npm run release` em `desktop/`. O script publica o instalador nos Releases, e os apps instalados se atualizam sozinhos.
+**Publishing a release**
 
-## Limitações
+1. Bump `version` in `desktop/package.json`.
+2. Create `desktop/electron-builder.env` with `GH_TOKEN=...`: a GitHub token with **Contents: Read and write** on this repository. The file is git-ignored.
+3. Run `npm run release` in `desktop/`. The script publishes the installer to Releases, and installed apps update themselves.
 
-- Somente Windows (10 versão 2004 ou mais novo para o áudio sem o Discord).
-- Instalador sem assinatura digital: aviso do SmartScreen na primeira execução.
-- Sem TURN, algumas redes muito restritivas (alguns 4G e CGNAT) não conseguem a conexão direta.
-- Malha P2P: com muitos espectadores em alta qualidade, o upload de quem transmite é o limite.
+## Limitations
+
+- Windows only (10 version 2004 or later for audio without Discord).
+- Unsigned installer: SmartScreen warning on first run.
+- Without TURN, some very restrictive networks (some mobile carriers and CGNAT) can't establish a direct connection.
+- P2P mesh: with many viewers at high quality, the streamer's upload is the limit.
