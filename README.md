@@ -15,7 +15,7 @@ English · [Português](README.pt-BR.md)
 
 <br>
 
-![Janshare in use: a room with three people watching a 1080p stream, with the stats panel showing a direct P2P connection](public/example.png)
+![Janshare in use: a room with three people watching a 1080p stream, stats panel showing a direct P2P connection](public/example.png)
 
 ## Features
 
