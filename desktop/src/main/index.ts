@@ -238,7 +238,8 @@ function start() {
 
   ipcMain.handle("sources:select", (_event, id: string, audio: boolean) => {
     const source = sourceCache.get(id);
-    if (!source) throw new Error("Fonte não encontrada. Atualize a lista e tente de novo.");
+    // Código traduzido no renderer (GoLiveModal).
+    if (!source) throw new Error("source-not-found");
     selected = { source, audio: Boolean(audio) };
   });
 

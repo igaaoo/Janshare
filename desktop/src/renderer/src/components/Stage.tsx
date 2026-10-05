@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { useI18n } from "../lib/i18n";
 import type { Peer, RoomSnapshot } from "../lib/room";
 import { Avatar } from "./Avatar";
 import {
@@ -39,6 +40,7 @@ function Tile({
   isSelf: boolean;
   onWatch(): void;
 }) {
+  const { t } = useI18n();
   const isLocalLive = isSelf && room.localStream;
   const viewers = isSelf ? (room.streamerStats?.viewers.length ?? 0) : 0;
 
@@ -48,9 +50,9 @@ function Tile({
         <>
           <LocalPreview stream={room.localStream!} />
           <div className="tile-caption">
-            <span className="live-badge">AO VIVO</span>
-            <span>Sua transmissão</span>
-            <span className="tile-viewers" title="Espectadores">
+            <span className="live-badge">{t("live.badge")}</span>
+            <span>{t("stage.yourStream")}</span>
+            <span className="tile-viewers" title={t("stage.viewers")}>
               <EyeIcon size={14} /> {viewers}
             </span>
           </div>
@@ -60,11 +62,11 @@ function Tile({
           <div className="tile-center">
             <Avatar name={peer.name} color={peer.color} size={64} />
             <button className="btn btn-watch" onClick={onWatch}>
-              Assistir transmissão
+              {t("watch.button")}
             </button>
           </div>
           <div className="tile-caption">
-            <span className="live-badge">AO VIVO</span>
+            <span className="live-badge">{t("live.badge")}</span>
             <span>{peer.name}</span>
           </div>
         </>
@@ -76,7 +78,7 @@ function Tile({
           <div className="tile-caption">
             <span>
               {peer.name}
-              {isSelf ? " (você)" : ""}
+              {isSelf ? ` ${t("stage.you")}` : ""}
             </span>
           </div>
         </>
@@ -94,6 +96,7 @@ export function Stage({
   onInvite,
   onLeave,
 }: Props) {
+  const { t } = useI18n();
   const everyone = room.self ? [room.self, ...room.peers] : room.peers;
   const streamer = room.watching
     ? room.peers.find((p) => p.id === room.watching)
@@ -107,16 +110,16 @@ export function Stage({
         <div className="stage-message">
           {room.status === "full" ? (
             <>
-              <h2>A sala está cheia</h2>
-              <p>Esta sala já tem o número máximo de pessoas.</p>
+              <h2>{t("stage.full.title")}</h2>
+              <p>{t("stage.full.text")}</p>
             </>
           ) : (
             <>
               <div className="spinner" />
               <p>
                 {room.status === "reconnecting"
-                  ? "Conexão perdida. Reconectando…"
-                  : "Conectando à sala…"}
+                  ? t("stage.reconnecting")
+                  : t("stage.connecting")}
               </p>
             </>
           )}
@@ -156,9 +159,9 @@ export function Stage({
           </div>
           {alone && (
             <div className="stage-invite">
-              <p>Ninguém por aqui ainda</p>
+              <p>{t("stage.alone")}</p>
               <button className="btn btn-primary" onClick={onInvite}>
-                <PersonAddIcon size={18} /> Copiar convite
+                <PersonAddIcon size={18} /> {t("action.copyInvite")}
               </button>
             </div>
           )}
@@ -170,21 +173,21 @@ export function Stage({
           className={`call-button${live ? " active" : ""}`}
           onClick={live ? onStopLive : onGoLive}
           disabled={room.status !== "connected"}
-          title={live ? "Parar transmissão" : "Compartilhar sua tela"}
+          title={live ? t("action.stopStreaming") : t("action.shareYourScreen")}
         >
           {live ? <StopShareIcon size={22} /> : <ScreenShareIcon size={22} />}
         </button>
         <button
           className="call-button"
           onClick={onInvite}
-          title="Copiar convite"
+          title={t("action.copyInvite")}
         >
           <PersonAddIcon size={22} />
         </button>
         <button
           className="call-button hangup"
           onClick={onLeave}
-          title="Sair da sala"
+          title={t("action.leaveRoom")}
         >
           <HangupIcon size={24} />
         </button>

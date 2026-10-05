@@ -43,7 +43,8 @@ export type RoomEvent =
   | { type: "peer-left"; peer: Peer }
   | { type: "live-started"; peer: Peer }
   | { type: "viewer-joined"; peer: Peer }
-  | { type: "error"; message: string };
+  // Códigos traduzidos na interface; "server" traz a mensagem crua do servidor.
+  | { type: "error"; code: "room-full" | "already-live" | "audio-fallback" | "server"; name?: string; message?: string };
 
 const RESOLUTIONS: Record<Resolution, { width?: number; height?: number; bitrate: number }> = {
   "720p": { width: 1280, height: 720, bitrate: 2_500_000 },
@@ -286,11 +287,15 @@ export class RoomClient {
       case "error": {
         if (msg.code === "room-full") {
           this.patch({ status: "full" });
-          this.opts.onEvent({ type: "error", message: "A sala está cheia (máximo de 8 pessoas)." });
+          this.opts.onEvent({ type: "error", code: "room-full" });
           return;
         }
-        if (msg.code === "already-live") this.stopLive();
-        this.opts.onEvent({ type: "error", message: msg.message });
+        if (msg.code === "already-live") {
+          this.stopLive();
+          this.opts.onEvent({ type: "error", code: "already-live", name: this.state.peers.find(p => p.live)?.name ?? "?" });
+          return;
+        }
+        this.opts.onEvent({ type: "error", code: "server", message: String(msg.message ?? "") });
         return;
       }
 
@@ -418,10 +423,7 @@ export class RoomClient {
         systemAudio = await startSystemAudio();
       } catch (error) {
         console.warn("Capturador de áudio indisponível, usando loopback", error);
-        this.opts.onEvent({
-          type: "error",
-          message: "Não deu para separar o som do Discord; transmitindo todo o som do PC."
-        });
+        this.opts.onEvent({ type: "error", code: "audio-fallback" });
       }
     }
     const loopback = settings.audio && !systemAudio;

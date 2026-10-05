@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { detectLanguage, type Language } from "./i18n";
 
 export const DEFAULT_SERVER = "https://janshare.igaaoo.workers.dev";
 
@@ -14,6 +15,7 @@ export type Settings = {
   profile: Profile;
   server: string;
   recentRooms: RecentRoom[];
+  language: Language;
 };
 
 const KEY = "janshare.settings";
@@ -22,11 +24,13 @@ function load(): Settings {
   const fallback: Settings = {
     profile: { name: "", color: AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)] },
     server: DEFAULT_SERVER,
-    recentRooms: []
+    recentRooms: [],
+    language: detectLanguage()
   };
   try {
     const settings: Settings = { ...fallback, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
     if (LEGACY_SERVERS.includes(settings.server.replace(/\/+$/, ""))) settings.server = DEFAULT_SERVER;
+    if (settings.language !== "en" && settings.language !== "pt") settings.language = fallback.language;
     return settings;
   } catch {
     return fallback;
