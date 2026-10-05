@@ -103,11 +103,11 @@ export function statsPage(stats: StatsSummary, icon: string): string {
     * { box-sizing: border-box; }
     body { margin: 0; background: var(--bg); color: var(--ink-2); font-family: "Noto Sans", "Segoe UI", system-ui, sans-serif; }
     main { max-width: 960px; margin: 0 auto; padding: 40px 20px 56px; }
-    header { display: flex; align-items: center; gap: 14px; margin-bottom: 28px; }
+    header { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-bottom: 28px; }
     header img { width: 48px; height: 48px; }
     h1 { color: var(--ink); font-size: 26px; margin: 0; }
     header p { margin: 4px 0 0; font-size: 14px; }
-    .online { display: inline-flex; align-items: center; gap: 8px; background: var(--surface); padding: 8px 14px; border-radius: 999px; margin-bottom: 20px; font-size: 14px; }
+    .online { display: inline-flex; align-items: center; gap: 8px; background: var(--surface); padding: 8px 14px; border-radius: 999px; margin-left: auto; font-size: 14px; white-space: nowrap; }
     .online strong { color: var(--ink); }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #23a55a; box-shadow: 0 0 0 3px rgba(35,165,90,.2); }
     .tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
@@ -161,9 +161,8 @@ export function statsPage(stats: StatsSummary, icon: string): string {
         <h1>Janshare em números</h1>
         <p>Compartilhamento de tela P2P para Windows, gratuito e sem cadastro.</p>
       </div>
+      <div class="online"><span class="dot" aria-hidden="true"></span><strong data-k="online">${number.format(stats.online)}</strong> online agora</div>
     </header>
-
-    <div class="online"><span class="dot" aria-hidden="true"></span><strong data-k="online">${number.format(stats.online)}</strong> online agora</div>
 
     <section class="tiles" aria-label="Totais">
       ${tile("users", "Usuários", number.format(t.users), "instalações únicas")}
