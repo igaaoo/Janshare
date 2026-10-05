@@ -1352,3 +1352,32 @@ kbd {
 .toast.error {
   border-left: 4px solid var(--live);
 }
+
+/* ---------------------------------------------------------------- atualização */
+
+.update-banner {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 420px;
+  padding: 12px 12px 12px 16px;
+  border-radius: 8px;
+  border-left: 4px solid var(--green);
+  background: var(--bg-floating);
+  color: var(--text-normal);
+  font-size: 14px;
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+  animation: pop 0.15s ease;
+}
+
+.update-banner strong {
+  color: var(--header-primary, #f2f3f5);
+}
+
+.update-banner .btn {
+  flex-shrink: 0;
+}

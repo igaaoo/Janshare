@@ -9,8 +9,11 @@ import {
   shell,
   type DesktopCapturerSource
 } from "electron";
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { cpSync, existsSync } from "node:fs";
 import { join, resolve } from "node:path";
+import { autoUpdater } from "electron-updater";
+import audioHelper from "../../resources/audio-capture.exe?asset&asarUnpack";
 import icon from "../../resources/icon.png?asset";
 
 const PROTOCOL = "janshare";
@@ -23,6 +26,52 @@ let pendingDeepLink: string | null = null;
 // chama getDisplayMedia, que cai no handler abaixo.
 const sourceCache = new Map<string, DesktopCapturerSource>();
 let selected: { source: DesktopCapturerSource; audio: boolean } | null = null;
+
+// Helper nativo que captura o som do sistema sem o Discord (native/audio-capture.cpp).
+// Um processo compartilhado por contagem de referências: trocar a fonte durante a
+// transmissão não derruba o áudio.
+let audioProc: ChildProcessWithoutNullStreams | null = null;
+let audioReady: Promise<void> | null = null;
+let audioUsers = 0;
+
+function startAudioHelper(): Promise<void> {
+  if (audioReady) return audioReady;
+
+  const proc = spawn(audioHelper, [], { windowsHide: true });
+  audioProc = proc;
+  let stderr = "";
+  proc.stderr.on("data", data => (stderr += data));
+  proc.stdout.on("data", (chunk: Buffer) => win?.webContents.send("audio:chunk", chunk));
+  proc.once("exit", () => {
+    if (audioProc !== proc) return;
+    audioProc = null;
+    audioReady = null;
+    audioUsers = 0;
+  });
+
+  // O helper escreve continuamente (inclusive silêncio): o primeiro chunk confirma que funcionou.
+  audioReady = new Promise<void>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("O capturador de áudio não respondeu.")), 3000);
+    proc.stdout.once("data", () => {
+      clearTimeout(timer);
+      resolve();
+    });
+    proc.once("error", reject);
+    proc.once("exit", code => reject(new Error(stderr.trim() || `O capturador de áudio saiu (código ${code}).`)));
+  });
+  audioReady.catch(() => stopAudioHelper());
+  return audioReady;
+}
+
+function stopAudioHelper() {
+  const proc = audioProc;
+  audioProc = null;
+  audioReady = null;
+  audioUsers = 0;
+  if (!proc) return;
+  proc.stdin.end();
+  proc.kill();
+}
 
 // A transmissão chega depois do clique em "Assistir"; o som não pode ser bloqueado.
 app.commandLine.appendSwitch("autoplay-policy", "no-user-gesture-required");
@@ -75,6 +124,27 @@ if (!app.requestSingleInstanceLock()) {
   app.whenReady().then(start);
 }
 
+// Atualização automática pelos Releases do GitHub (publish no electron-builder.yml).
+// Baixa em segundo plano; instala ao fechar o app ou quando o usuário clica em
+// "Reiniciar" no aviso do renderer.
+const UPDATE_CHECK_MS = 4 * 3600_000;
+let updateReady: string | null = null;
+
+function setupUpdates() {
+  if (!app.isPackaged) return;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.on("update-downloaded", info => {
+    updateReady = info.version;
+    win?.webContents.send("update:ready", info.version);
+  });
+  autoUpdater.on("error", error => console.error("Atualização falhou:", error));
+
+  const check = () => autoUpdater.checkForUpdates().catch(error => console.error("Atualização falhou:", error));
+  void check();
+  setInterval(check, UPDATE_CHECK_MS);
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1280,
@@ -98,6 +168,9 @@ function createWindow() {
   win.once("ready-to-show", () => win?.show());
   win.on("focus", () => win?.flashFrame(false));
   win.on("closed", () => (win = null));
+  // Renderer recarregou ou caiu: ninguém mais consome o áudio.
+  win.webContents.on("did-start-loading", stopAudioHelper);
+  win.webContents.on("render-process-gone", stopAudioHelper);
 
   // Links externos abrem no navegador; o app nunca navega para fora.
   win.webContents.setWindowOpenHandler(({ url }) => {
@@ -116,10 +189,18 @@ function createWindow() {
 function start() {
   app.setAppUserModelId("dev.janshare.desktop");
 
-  const allowed = new Set(["media", "display-capture", "notifications", "fullscreen", "clipboard-sanitized-write"]);
-  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+  // Microfone e câmera ficam sempre negados: o app não usa e, se o renderer fosse
+  // comprometido, ninguém liga o microfone sem aviso. getDisplayMedia pede "media"
+  // com mediaTypes vazio; microfone/câmera pedem ["audio"]/["video"].
+  const allowed = new Set(["display-capture", "notifications", "fullscreen", "clipboard-sanitized-write"]);
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback, details) => {
+    if (permission === "media") {
+      callback("mediaTypes" in details && (details.mediaTypes ?? []).length === 0);
+      return;
+    }
     callback(allowed.has(permission));
   });
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowed.has(permission));
 
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
     const choice = selected;
@@ -161,6 +242,26 @@ function start() {
     selected = { source, audio: Boolean(audio) };
   });
 
+  ipcMain.handle("audio:start", async () => {
+    audioUsers++;
+    try {
+      await startAudioHelper();
+    } catch (error) {
+      audioUsers = Math.max(0, audioUsers - 1);
+      throw error;
+    }
+  });
+
+  ipcMain.handle("audio:stop", () => {
+    audioUsers = Math.max(0, audioUsers - 1);
+    if (audioUsers === 0) stopAudioHelper();
+  });
+
+  ipcMain.handle("update:pending", () => updateReady);
+  ipcMain.handle("update:install", () => {
+    if (updateReady) autoUpdater.quitAndInstall(true, true);
+  });
+
   ipcMain.handle("deep-link:consume", () => {
     const url = pendingDeepLink;
     pendingDeepLink = null;
@@ -185,6 +286,7 @@ function start() {
   });
 
   createWindow();
+  setupUpdates();
 
   globalShortcut.register(GO_LIVE_SHORTCUT, () => {
     focusWindow();
@@ -196,7 +298,10 @@ function start() {
   });
 }
 
-app.on("will-quit", () => globalShortcut.unregisterAll());
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
+  stopAudioHelper();
+});
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") app.quit();

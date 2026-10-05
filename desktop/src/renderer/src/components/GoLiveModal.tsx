@@ -154,7 +154,7 @@ export function GoLiveModal({ current, audienceSize, onCancel, onConfirm }: Prop
           <label className="toggle-row">
             <span>
               <strong>Compartilhar áudio do sistema</strong>
-              <small>Transmite todo o som do computador, inclusive o de outras chamadas.</small>
+              <small>Transmite o som do computador, exceto o do Discord.</small>
             </span>
             <input
               type="checkbox"

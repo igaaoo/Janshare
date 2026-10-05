@@ -12,11 +12,20 @@ protocols:
   - name: Janshare
     schemes:
       - janshare
+# Atualização automática: o build publica instalador + latest.yml + blockmap
+# nos Releases do GitHub e o electron-updater consulta o latest.yml.
+publish:
+  provider: github
+  owner: igaaoo
+  repo: Janshare
+  releaseType: release
 win:
   icon: resources/icon.png
   target:
     - nsis
 nsis:
+  # Sem espaços: o GitHub troca espaço por ponto no upload e quebraria o latest.yml.
+  artifactName: Janshare-Setup-${version}.${ext}
   oneClick: true
   perMachine: false
   createDesktopShortcut: true

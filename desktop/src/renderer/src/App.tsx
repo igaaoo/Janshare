@@ -31,6 +31,8 @@ export function App() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [joinInput, setJoinInput] = useState("");
   const [joinError, setJoinError] = useState<string | null>(null);
+  const [updateVersion, setUpdateVersion] = useState<string | null>(null);
+  const [updateDismissed, setUpdateDismissed] = useState(false);
 
   const settingsRef = useRef(settings);
   settingsRef.current = settings;
@@ -113,6 +115,12 @@ export function App() {
     void window.janshare.consumeDeepLink().then(url => url && open(url));
     return window.janshare.onDeepLink(open);
   }, [joinRoom]);
+
+  // Atualização baixada em segundo plano (main/index.ts → setupUpdates).
+  useEffect(() => {
+    void window.janshare.pendingUpdate().then(version => version && setUpdateVersion(version));
+    return window.janshare.onUpdateReady(setUpdateVersion);
+  }, []);
 
   // Atalho global: inicia (abre o seletor) ou para a transmissão.
   useEffect(
@@ -404,6 +412,23 @@ export function App() {
             }
           }}
         />
+      )}
+
+      {updateVersion && !updateDismissed && (
+        <div className="update-banner" role="status">
+          <span>
+            <strong>Atualização {updateVersion} pronta.</strong>
+            {live ? " Ela será instalada quando você fechar o app." : " Reinicie para instalar."}
+          </span>
+          {!live && (
+            <button className="btn btn-primary" onClick={() => void window.janshare.installUpdate()}>
+              Reiniciar
+            </button>
+          )}
+          <button className="icon-button small" onClick={() => setUpdateDismissed(true)} title="Depois" aria-label="Depois">
+            <CloseIcon size={14} />
+          </button>
+        </div>
       )}
 
       <div className="toasts" aria-live="polite">

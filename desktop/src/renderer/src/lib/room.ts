@@ -1,6 +1,8 @@
+import { startSystemAudio, type SystemAudio } from "./audio";
 import type { Profile } from "./settings";
 
-export type Peer = { id: string; name: string; color: string; live: boolean };
+// key: hash (feito pelo servidor) do segredo de cada cliente; igual entre reconexões.
+export type Peer = { id: string; name: string; color: string; live: boolean; key?: string };
 
 export type Resolution = "720p" | "1080p" | "source";
 export type FrameRate = 15 | 30 | 60;
@@ -59,6 +61,34 @@ const FALLBACK_ICE: RTCIceServer[] = [{ urls: "stun:stun.l.google.com:19302" }];
 const HEARTBEAT_MS = 15_000;
 const HEARTBEAT_TIMEOUT_MS = 40_000;
 const REWATCH_WINDOW_MS = 60_000;
+const MAX_PENDING_ICE = 50;
+const MAX_SDP_LENGTH = 64 * 1024;
+
+function makeSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(24));
+  return Array.from(bytes, b => b.toString(16).padStart(2, "0")).join("");
+}
+
+// Id aleatório desta instalação, só para contar usuários únicos (o servidor guarda o hash).
+const INSTALL_KEY = "janshare.installId";
+function installId(): string {
+  let id = localStorage.getItem(INSTALL_KEY);
+  if (!id) {
+    id = makeSecret();
+    localStorage.setItem(INSTALL_KEY, id);
+  }
+  return id;
+}
+
+function isSdp(value: unknown, type: "offer" | "answer"): value is RTCSessionDescriptionInit {
+  const sdp = value as RTCSessionDescriptionInit | null;
+  return !!sdp && sdp.type === type && typeof sdp.sdp === "string" && sdp.sdp.length <= MAX_SDP_LENGTH;
+}
+
+function isCandidate(value: unknown): value is RTCIceCandidateInit {
+  const candidate = value as RTCIceCandidateInit | null;
+  return !!candidate && typeof candidate.candidate === "string" && candidate.candidate.length <= 1024;
+}
 
 type Options = {
   server: string;
@@ -92,9 +122,14 @@ export class RoomClient {
   private recv: { peerId: string; pc: RTCPeerConnection } | null = null;
   private pendingIce = new Map<string, RTCIceCandidateInit[]>();
   private lastBytes = new Map<string, { bytes: number; time: number }>();
+  // Capturador nativo do som (sem o Discord) da transmissão atual.
+  private systemAudio: SystemAudio | null = null;
 
   // Para voltar a assistir sozinho se o transmissor cair e voltar.
-  private rewatch: { name: string; until: number } | null = null;
+  // Compara pela key (que ninguém consegue copiar), não pelo nome.
+  private rewatch: { key: string; until: number } | null = null;
+  // Segredo desta sessão: o servidor publica só o hash (Peer.key).
+  private readonly secret = makeSecret();
 
   private state: RoomSnapshot;
 
@@ -172,7 +207,7 @@ export class RoomClient {
         return;
       }
       try {
-        void this.onSignal(JSON.parse(event.data));
+        this.onSignal(JSON.parse(event.data)).catch(error => console.warn("Falha ao tratar sinal", error));
       } catch (error) {
         console.error("Mensagem inválida", error);
       }
@@ -192,7 +227,7 @@ export class RoomClient {
     } catch {}
 
     const streamer = this.state.watching ? this.peer(this.state.watching) : undefined;
-    if (streamer) this.rewatch = { name: streamer.name, until: Date.now() + REWATCH_WINDOW_MS };
+    if (streamer?.key) this.rewatch = { key: streamer.key, until: Date.now() + REWATCH_WINDOW_MS };
     this.closeAllSending();
     this.stopWatchingLocal();
 
@@ -208,7 +243,14 @@ export class RoomClient {
   }
 
   private sendHello() {
-    this.send({ type: "hello", name: this.opts.profile.name, color: this.opts.profile.color });
+    this.send({
+      type: "hello",
+      name: this.opts.profile.name,
+      color: this.opts.profile.color,
+      secret: this.secret,
+      install: installId(),
+      version: __APP_VERSION__
+    });
   }
 
   updateProfile(profile: Profile) {
@@ -279,7 +321,7 @@ export class RoomClient {
         const peer = this.peer(msg.id);
         if (!peer) return;
         if (this.state.watching === peer.id) {
-          this.rewatch = { name: peer.name, until: Date.now() + REWATCH_WINDOW_MS };
+          if (peer.key) this.rewatch = { key: peer.key, until: Date.now() + REWATCH_WINDOW_MS };
           this.stopWatchingLocal();
         }
         this.closeSending(peer.id);
@@ -301,19 +343,19 @@ export class RoomClient {
         return;
 
       case "offer":
-        if (msg.from) await this.handleOffer(msg.from, msg.sdp);
+        if (msg.from && isSdp(msg.sdp, "offer")) await this.handleOffer(msg.from, msg.sdp);
         return;
 
       case "answer": {
         const pc = msg.from && this.sendPcs.get(msg.from);
-        if (!pc) return;
+        if (!pc || !isSdp(msg.sdp, "answer")) return;
         await pc.setRemoteDescription(msg.sdp);
         await this.flushIce(msg.from!, pc);
         return;
       }
 
       case "ice-candidate":
-        if (msg.from) await this.addIce(msg.from, msg.candidate);
+        if (msg.from && isCandidate(msg.candidate)) await this.addIce(msg.from, msg.candidate);
         return;
     }
   }
@@ -324,7 +366,7 @@ export class RoomClient {
       this.rewatch = null;
       return;
     }
-    if (peer.name === this.rewatch.name) this.watch(peer.id);
+    if (peer.key === this.rewatch.key) this.watch(peer.id);
   }
 
   private createPc(peerId: string): RTCPeerConnection {
@@ -337,9 +379,12 @@ export class RoomClient {
 
   private async addIce(peerId: string, candidate: RTCIceCandidateInit) {
     const pc = this.recv?.peerId === peerId ? this.recv.pc : this.sendPcs.get(peerId);
-    if (!pc || !pc.remoteDescription) {
+    // Só aceita candidatos de quem tem conexão com a gente, e com fila limitada:
+    // um peer não consegue encher a memória mandando candidatos falsos.
+    if (!pc) return;
+    if (!pc.remoteDescription) {
       const queue = this.pendingIce.get(peerId) ?? [];
-      queue.push(candidate);
+      if (queue.length < MAX_PENDING_ICE) queue.push(candidate);
       this.pendingIce.set(peerId, queue);
       return;
     }
@@ -364,30 +409,54 @@ export class RoomClient {
 
   // ---------------------------------------------------------------- transmitir
 
-  private async capture(settings: StreamSettings): Promise<MediaStream> {
-    await window.janshare.selectSource(settings.sourceId, settings.audio);
-    const { width, height } = RESOLUTIONS[settings.resolution];
-    const stream = await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        ...(width ? { width: { max: width }, height: { max: height } } : {}),
-        frameRate: { ideal: settings.fps, max: settings.fps }
-      },
-      audio: settings.audio
-    });
+  private async capture(settings: StreamSettings): Promise<{ stream: MediaStream; systemAudio: SystemAudio | null }> {
+    // Som: o capturador nativo tira o Discord (quem assiste já está na call). Se ele
+    // falhar, cai no loopback do Chromium, que transmite todo o som do PC.
+    let systemAudio: SystemAudio | null = null;
+    if (settings.audio) {
+      try {
+        systemAudio = await startSystemAudio();
+      } catch (error) {
+        console.warn("Capturador de áudio indisponível, usando loopback", error);
+        this.opts.onEvent({
+          type: "error",
+          message: "Não deu para separar o som do Discord; transmitindo todo o som do PC."
+        });
+      }
+    }
+    const loopback = settings.audio && !systemAudio;
 
-    const video = stream.getVideoTracks()[0];
-    // "motion" prioriza fluidez (jogos/vídeo); "detail" prioriza nitidez (texto/código).
-    video.contentHint = settings.fps >= 60 ? "motion" : "detail";
-    video.addEventListener("ended", () => {
-      if (this.state.localStream === stream) this.stopLive();
-    });
-    return stream;
+    try {
+      await window.janshare.selectSource(settings.sourceId, loopback);
+      const { width, height } = RESOLUTIONS[settings.resolution];
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: {
+          ...(width ? { width: { max: width }, height: { max: height } } : {}),
+          frameRate: { ideal: settings.fps, max: settings.fps }
+        },
+        audio: loopback
+      });
+      if (systemAudio) stream.addTrack(systemAudio.track);
+
+      const video = stream.getVideoTracks()[0];
+      // "motion" prioriza fluidez (jogos/vídeo); "detail" prioriza nitidez (texto/código).
+      video.contentHint = settings.fps >= 60 ? "motion" : "detail";
+      video.addEventListener("ended", () => {
+        if (this.state.localStream === stream) this.stopLive();
+      });
+      return { stream, systemAudio };
+    } catch (error) {
+      systemAudio?.stop();
+      throw error;
+    }
   }
 
   /** Começa a transmitir ou, se já estiver ao vivo, troca a fonte sem derrubar ninguém. */
   async goLive(settings: StreamSettings) {
-    const stream = await this.capture(settings);
+    const { stream, systemAudio } = await this.capture(settings);
     const previous = this.state.localStream;
+    const previousAudio = this.systemAudio;
+    this.systemAudio = systemAudio;
 
     if (previous) {
       const video = stream.getVideoTracks()[0] ?? null;
@@ -399,6 +468,7 @@ export class RoomClient {
         await this.applyBitrate(videoTx?.sender, settings);
       }
       previous.getTracks().forEach(track => track.stop());
+      previousAudio?.stop();
       this.patch({ localStream: stream, streamSettings: settings });
       return;
     }
@@ -411,6 +481,8 @@ export class RoomClient {
     const stream = this.state.localStream;
     if (!stream) return;
     stream.getTracks().forEach(track => track.stop());
+    this.systemAudio?.stop();
+    this.systemAudio = null;
     this.closeAllSending();
     this.patch({ localStream: null, streamSettings: null, streamerStats: null });
     this.send({ type: "stop-live" });
