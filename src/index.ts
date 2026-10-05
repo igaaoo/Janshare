@@ -1,7 +1,12 @@
 import { DurableObject } from "cloudflare:workers";
+import { Stats } from "./stats";
+import { statsPage } from "./stats-page";
 
-interface Env {
+export { Stats };
+
+export interface Env {
   ROOMS: DurableObjectNamespace<Room>;
+  STATS: DurableObjectNamespace<Stats>;
   // Opcionais: Cloudflare Realtime TURN. Sem eles, o app usa só STUN.
   TURN_KEY_ID?: string;
   TURN_KEY_API_TOKEN?: string;
@@ -22,7 +27,81 @@ type Attachment = {
   name: string;
   color: string;
   live: boolean;
+  // Hash do segredo que o cliente manda no hello: identifica a mesma pessoa entre
+  // reconexões (os ids mudam) sem que outro peer consiga copiar.
+  key: string;
+  // Limite de mensagens (token bucket) para um peer não inundar os outros.
+  tokens: number;
+  at: number;
+  // Estatísticas (ver stats.ts): país (da Cloudflare), início da sessão, da
+  // transmissão e de quem está assistindo.
+  country: string;
+  joinedAt: number;
+  liveSince: number;
+  watching: string;
+  watchSince: number;
 };
+
+const RATE_BURST = 300;
+const RATE_PER_SECOND = 50;
+const RELAY_TYPES = new Set(["watch", "unwatch", "offer", "answer", "ice-candidate"]);
+
+// Remove caracteres de controle e de direção (RTL override etc.), usados para disfarçar nomes.
+function cleanName(value: unknown): string {
+  return String(value ?? "")
+    .replace(/[\p{Cc}\p{Cf}]/gu, "")
+    .trim()
+    .slice(0, 32);
+}
+
+async function keyFor(secret: unknown): Promise<string> {
+  if (typeof secret !== "string" || secret.length < 16 || secret.length > 128) return "";
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret));
+  return [...new Uint8Array(digest).slice(0, 16)].map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function takeToken(info: Attachment): boolean {
+  const now = Date.now();
+  // `??`: sockets abertos antes do deploy não têm esses campos.
+  info.tokens = Math.min(RATE_BURST, (info.tokens ?? RATE_BURST) + ((now - (info.at ?? now)) / 1000) * RATE_PER_SECOND);
+  info.at = now;
+  if (info.tokens < 1) return false;
+  info.tokens -= 1;
+  return true;
+}
+
+/** Campos que vão para o outro peer; o resto da mensagem é descartado. */
+function relayPayload(message: Record<string, unknown>): Record<string, unknown> | null {
+  switch (message.type) {
+    case "watch":
+    case "unwatch":
+      return { type: message.type };
+    case "offer":
+    case "answer": {
+      const sdp = message.sdp as { type?: unknown; sdp?: unknown } | null;
+      if (!sdp || sdp.type !== message.type || typeof sdp.sdp !== "string") return null;
+      return { type: message.type, sdp: { type: sdp.type, sdp: sdp.sdp } };
+    }
+    case "ice-candidate": {
+      const c = message.candidate as { candidate?: unknown; sdpMid?: unknown; sdpMLineIndex?: unknown } | null;
+      if (!c || typeof c.candidate !== "string" || c.candidate.length > 1024) return null;
+      return {
+        type: "ice-candidate",
+        candidate: {
+          candidate: c.candidate,
+          sdpMid: typeof c.sdpMid === "string" ? c.sdpMid : null,
+          sdpMLineIndex: typeof c.sdpMLineIndex === "number" ? c.sdpMLineIndex : null
+        }
+      };
+    }
+  }
+  return null;
+}
+
+/** O que os outros peers enxergam (sem o estado interno do rate limit). */
+function publicPeer({ id, name, color, live, key }: Attachment) {
+  return { id, name, color, live, key };
+}
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -119,6 +198,14 @@ export default {
       return json({ iceServers: await iceServers(env) });
     }
 
+    if (url.pathname === "/stats" || url.pathname === "/stats.json") {
+      const summary = await env.STATS.get(env.STATS.idFromName("global")).summary();
+      if (url.pathname === "/stats.json") return json(summary);
+      return new Response(statsPage(summary, ICON_SVG), {
+        headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
+      });
+    }
+
     if (url.pathname.startsWith("/ws/")) {
       if (request.headers.get("Upgrade") !== "websocket") {
         return new Response("Expected WebSocket", { status: 426 });
@@ -130,7 +217,10 @@ export default {
         return new Response("Invalid room", { status: 400 });
       }
 
-      return env.ROOMS.get(env.ROOMS.idFromName(roomId)).fetch(request);
+      // O país vem da Cloudflare (nunca do cliente) e vai só para as estatísticas.
+      const forwarded = new Request(request);
+      forwarded.headers.set("x-janshare-country", String(request.cf?.country ?? "XX"));
+      return env.ROOMS.get(env.ROOMS.idFromName(roomId)).fetch(forwarded);
     }
 
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
@@ -174,7 +264,20 @@ export class Room extends DurableObject<Env> {
       server.send(JSON.stringify({ type: "error", code: "room-full", message: "A sala está cheia." }));
       server.close(4000, "room-full");
     } else {
-      const attachment: Attachment = { id: crypto.randomUUID(), name: "", color: "", live: false };
+      const attachment: Attachment = {
+        id: crypto.randomUUID(),
+        name: "",
+        color: "",
+        live: false,
+        key: "",
+        tokens: RATE_BURST,
+        at: Date.now(),
+        country: request.headers.get("x-janshare-country") ?? "XX",
+        joinedAt: 0,
+        liveSince: 0,
+        watching: "",
+        watchSince: 0
+      };
       server.serializeAttachment(attachment);
     }
 
@@ -195,6 +298,39 @@ export class Room extends DurableObject<Env> {
     return result;
   }
 
+  /** Registra um evento nas estatísticas sem atrasar nem derrubar o signaling. */
+  private track(event: (stats: DurableObjectStub<Stats>) => Promise<unknown>) {
+    event(this.env.STATS.get(this.env.STATS.idFromName("global"))).catch(error => console.error("stats:", error));
+  }
+
+  // No webSocketClose o socket já está fechando e gravar o attachment pode falhar.
+  private save(ws: WebSocket, info: Attachment) {
+    try {
+      ws.serializeAttachment(info);
+    } catch {}
+  }
+
+  private endWatch(ws: WebSocket, info: Attachment) {
+    if (!info.watching) return;
+    const seconds = (Date.now() - info.watchSince) / 1000;
+    info.watching = "";
+    info.watchSince = 0;
+    this.save(ws, info);
+    this.track(stats => stats.watchEnded(seconds));
+  }
+
+  /** Fim da transmissão: fecha também o tempo de quem estava assistindo. */
+  private endStream(ws: WebSocket, info: Attachment) {
+    if (!info.liveSince) return;
+    const seconds = (Date.now() - info.liveSince) / 1000;
+    info.liveSince = 0;
+    this.save(ws, info);
+    this.track(stats => stats.streamEnded(seconds));
+    for (const peer of this.peers()) {
+      if (peer.info.watching === info.id) this.endWatch(peer.ws, peer.info);
+    }
+  }
+
   private broadcast(message: unknown, except?: WebSocket) {
     const data = JSON.stringify(message);
     for (const { ws } of this.peers()) {
@@ -202,11 +338,16 @@ export class Room extends DurableObject<Env> {
     }
   }
 
-  webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
+  async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer) {
     if (typeof raw !== "string" || raw.length > 64 * 1024) return;
 
     const info = this.info(ws);
     if (!info) return;
+
+    // Acima do limite a mensagem é descartada em silêncio.
+    const allowed = takeToken(info);
+    ws.serializeAttachment(info);
+    if (!allowed) return;
 
     let message: Record<string, unknown>;
     try {
@@ -214,21 +355,41 @@ export class Room extends DurableObject<Env> {
     } catch {
       return;
     }
+    if (!message || typeof message !== "object") return;
 
     switch (message.type) {
       case "hello": {
         const firstHello = !info.name;
-        info.name = String(message.name ?? "").trim().slice(0, 32) || "Anônimo";
+        info.name = cleanName(message.name) || "Anônimo";
         info.color = /^#[0-9a-f]{6}$/i.test(String(message.color)) ? String(message.color) : "#5865f2";
+        // A identidade não muda durante a conexão: um hello posterior não troca a key.
+        if (firstHello) {
+          info.key = await keyFor(message.secret);
+          info.joinedAt = Date.now();
+        }
         ws.serializeAttachment(info);
 
         ws.send(JSON.stringify({
           type: "welcome",
-          self: info,
-          peers: this.peers().filter(p => p.ws !== ws).map(p => p.info)
+          self: publicPeer(info),
+          peers: this.peers().filter(p => p.ws !== ws).map(p => publicPeer(p.info))
         }));
 
-        this.broadcast({ type: firstHello ? "peer-joined" : "peer-updated", peer: info }, ws);
+        this.broadcast({ type: firstHello ? "peer-joined" : "peer-updated", peer: publicPeer(info) }, ws);
+
+        if (firstHello) {
+          const install = await keyFor(message.install);
+          const online = this.peers().length;
+          this.track(stats =>
+            stats.join({
+              install,
+              version: String(message.version ?? ""),
+              country: info.country ?? "XX",
+              room: this.ctx.id.toString(),
+              online
+            })
+          );
+        }
         return;
       }
 
@@ -244,8 +405,12 @@ export class Room extends DurableObject<Env> {
           return;
         }
         info.live = true;
+        if (!info.liveSince) {
+          info.liveSince = Date.now();
+          this.track(stats => stats.streamStarted());
+        }
         ws.serializeAttachment(info);
-        this.broadcast({ type: "peer-updated", peer: info });
+        this.broadcast({ type: "peer-updated", peer: publicPeer(info) });
         return;
       }
 
@@ -253,19 +418,27 @@ export class Room extends DurableObject<Env> {
         if (!info.live) return;
         info.live = false;
         ws.serializeAttachment(info);
-        this.broadcast({ type: "peer-updated", peer: info });
+        this.endStream(ws, info);
+        this.broadcast({ type: "peer-updated", peer: publicPeer(info) });
         return;
       }
 
-      case "watch":
-      case "unwatch":
-      case "offer":
-      case "answer":
-      case "ice-candidate": {
-        const target = this.peers().find(p => p.info.id === message.to);
-        if (!target || !info.name) return;
-        const { to: _to, ...rest } = message;
-        target.ws.send(JSON.stringify({ ...rest, from: info.id }));
+      default: {
+        if (!RELAY_TYPES.has(String(message.type)) || !info.name) return;
+        const target = this.peers().find(p => p.info.id === message.to && p.ws !== ws);
+        const payload = relayPayload(message);
+        if (!target || !payload) return;
+        target.ws.send(JSON.stringify({ ...payload, from: info.id }));
+
+        if (message.type === "watch" && target.info.live && info.watching !== target.info.id) {
+          this.endWatch(ws, info);
+          info.watching = target.info.id;
+          info.watchSince = Date.now();
+          ws.serializeAttachment(info);
+          this.track(stats => stats.watchStarted());
+        } else if (message.type === "unwatch" && info.watching === target.info.id) {
+          this.endWatch(ws, info);
+        }
         return;
       }
     }
@@ -273,7 +446,14 @@ export class Room extends DurableObject<Env> {
 
   webSocketClose(ws: WebSocket, code: number, reason: string) {
     const info = this.info(ws);
-    if (info?.name) this.broadcast({ type: "peer-left", id: info.id }, ws);
+    if (info?.name) {
+      this.broadcast({ type: "peer-left", id: info.id }, ws);
+      this.endStream(ws, info);
+      this.endWatch(ws, info);
+      const seconds = (Date.now() - info.joinedAt) / 1000;
+      const online = this.peers().length;
+      this.track(stats => stats.leave({ room: this.ctx.id.toString(), online, seconds }));
+    }
 
     try {
       ws.close(code, reason);
