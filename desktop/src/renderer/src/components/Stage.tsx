@@ -1,7 +1,13 @@
 import { useEffect, useRef } from "react";
 import type { Peer, RoomSnapshot } from "../lib/room";
 import { Avatar } from "./Avatar";
-import { EyeIcon, HangupIcon, PersonAddIcon, ScreenShareIcon, StopShareIcon } from "./Icons";
+import {
+  EyeIcon,
+  HangupIcon,
+  PersonAddIcon,
+  ScreenShareIcon,
+  StopShareIcon,
+} from "./Icons";
 import { StreamPlayer } from "./StreamPlayer";
 
 type Props = {
@@ -22,9 +28,19 @@ function LocalPreview({ stream }: { stream: MediaStream }) {
   return <video ref={video} autoPlay playsInline muted />;
 }
 
-function Tile({ peer, room, isSelf, onWatch }: { peer: Peer; room: RoomSnapshot; isSelf: boolean; onWatch(): void }) {
+function Tile({
+  peer,
+  room,
+  isSelf,
+  onWatch,
+}: {
+  peer: Peer;
+  room: RoomSnapshot;
+  isSelf: boolean;
+  onWatch(): void;
+}) {
   const isLocalLive = isSelf && room.localStream;
-  const viewers = isSelf ? room.streamerStats?.viewers.length ?? 0 : 0;
+  const viewers = isSelf ? (room.streamerStats?.viewers.length ?? 0) : 0;
 
   return (
     <div className={`tile${peer.live ? " tile-live" : ""}`}>
@@ -69,9 +85,19 @@ function Tile({ peer, room, isSelf, onWatch }: { peer: Peer; room: RoomSnapshot;
   );
 }
 
-export function Stage({ room, onWatch, onStopWatching, onGoLive, onStopLive, onInvite, onLeave }: Props) {
+export function Stage({
+  room,
+  onWatch,
+  onStopWatching,
+  onGoLive,
+  onStopLive,
+  onInvite,
+  onLeave,
+}: Props) {
   const everyone = room.self ? [room.self, ...room.peers] : room.peers;
-  const streamer = room.watching ? room.peers.find(p => p.id === room.watching) : undefined;
+  const streamer = room.watching
+    ? room.peers.find((p) => p.id === room.watching)
+    : undefined;
   const live = Boolean(room.localStream);
   const alone = room.status === "connected" && room.peers.length === 0;
 
@@ -87,17 +113,30 @@ export function Stage({ room, onWatch, onStopWatching, onGoLive, onStopLive, onI
           ) : (
             <>
               <div className="spinner" />
-              <p>{room.status === "reconnecting" ? "Conexão perdida. Reconectando…" : "Conectando à sala…"}</p>
+              <p>
+                {room.status === "reconnecting"
+                  ? "Conexão perdida. Reconectando…"
+                  : "Conectando à sala…"}
+              </p>
             </>
           )}
         </div>
       ) : streamer ? (
         <div className="stage-focus">
-          <StreamPlayer streamer={streamer} room={room} onStop={onStopWatching} />
+          <StreamPlayer
+            streamer={streamer}
+            room={room}
+            onStop={onStopWatching}
+          />
           <div className="stage-strip">
-            {everyone.map(peer => (
+            {everyone.map((peer) => (
               <div key={peer.id} className="strip-item" title={peer.name}>
-                <Avatar name={peer.name} color={peer.color} size={40} live={peer.live} />
+                <Avatar
+                  name={peer.name}
+                  color={peer.color}
+                  size={40}
+                  live={peer.live}
+                />
               </div>
             ))}
           </div>
@@ -105,13 +144,19 @@ export function Stage({ room, onWatch, onStopWatching, onGoLive, onStopLive, onI
       ) : (
         <div className="stage-grid-wrap">
           <div className={`stage-grid count-${Math.min(everyone.length, 4)}`}>
-            {everyone.map(peer => (
-              <Tile key={peer.id} peer={peer} room={room} isSelf={peer.id === room.self?.id} onWatch={() => onWatch(peer.id)} />
+            {everyone.map((peer) => (
+              <Tile
+                key={peer.id}
+                peer={peer}
+                room={room}
+                isSelf={peer.id === room.self?.id}
+                onWatch={() => onWatch(peer.id)}
+              />
             ))}
           </div>
           {alone && (
             <div className="stage-invite">
-              <p>Ninguém mais por aqui ainda.</p>
+              <p>Ninguém por aqui ainda</p>
               <button className="btn btn-primary" onClick={onInvite}>
                 <PersonAddIcon size={18} /> Copiar convite
               </button>
@@ -129,10 +174,18 @@ export function Stage({ room, onWatch, onStopWatching, onGoLive, onStopLive, onI
         >
           {live ? <StopShareIcon size={22} /> : <ScreenShareIcon size={22} />}
         </button>
-        <button className="call-button" onClick={onInvite} title="Copiar convite">
+        <button
+          className="call-button"
+          onClick={onInvite}
+          title="Copiar convite"
+        >
           <PersonAddIcon size={22} />
         </button>
-        <button className="call-button hangup" onClick={onLeave} title="Sair da sala">
+        <button
+          className="call-button hangup"
+          onClick={onLeave}
+          title="Sair da sala"
+        >
           <HangupIcon size={24} />
         </button>
       </div>
