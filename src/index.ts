@@ -144,13 +144,44 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"']/g, c => `&#${c.charCodeAt(0)};`);
 }
 
+export type PageLanguage = "en" | "pt";
+
+const DOWNLOAD_URL = "https://github.com/igaaoo/Janshare/releases/latest";
+
+/** Idioma das páginas: `?lang=en|pt` ou o Accept-Language do navegador (pt-* → português). */
+function pageLanguage(request: Request, url: URL): PageLanguage {
+  const forced = url.searchParams.get("lang");
+  if (forced === "en" || forced === "pt") return forced;
+  return /^\s*pt\b/i.test(request.headers.get("accept-language") ?? "") ? "pt" : "en";
+}
+
+const LANDING_TEXT = {
+  en: {
+    invited: "You've been invited to a stream",
+    room: "Room",
+    tagline: "Lightweight peer-to-peer screen sharing.",
+    open: "Open in the app",
+    noApp: "Don't have the app yet?",
+    download: "Download Janshare for Windows"
+  },
+  pt: {
+    invited: "Você foi convidado para uma transmissão",
+    room: "Sala",
+    tagline: "Compartilhamento de tela P2P leve.",
+    open: "Abrir no app",
+    noApp: "Ainda não tem o app?",
+    download: "Baixe o Janshare para Windows"
+  }
+} satisfies Record<PageLanguage, Record<string, string>>;
+
 // Página para quem abre o link no navegador: tenta abrir o app desktop.
-function landingPage(roomId: string | null): string {
+function landingPage(roomId: string | null, language: PageLanguage): string {
   const deepLink = roomId ? `${PROTOCOL}://room/${roomId}` : `${PROTOCOL}://`;
   const safeLink = escapeHtml(deepLink);
+  const text = LANDING_TEXT[language];
 
   return `<!doctype html>
-<html lang="pt-BR">
+<html lang="${language === "pt" ? "pt-BR" : "en"}">
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -172,14 +203,15 @@ function landingPage(roomId: string | null): string {
     }
     a.button:hover { background: #4752c4; }
     code { background: #1e1f22; padding: 2px 6px; border-radius: 4px; }
+    p a { color: #00a8fc; }
   </style>
 </head>
 <body>
   <div class="card">
-    <h1>${roomId ? "Você foi convidado para uma transmissão" : "Janshare"}</h1>
-    <p>${roomId ? `Sala <code>${escapeHtml(roomId)}</code>` : "Compartilhamento de tela P2P."}</p>
-    <a class="button" href="${safeLink}">Abrir no app</a>
-    <p>Ainda não tem o app? Peça o instalador para quem te enviou o link.</p>
+    <h1>${roomId ? text.invited : "Janshare"}</h1>
+    <p>${roomId ? `${text.room} <code>${escapeHtml(roomId)}</code>` : text.tagline}</p>
+    <a class="button" href="${safeLink}">${text.open}</a>
+    <p>${text.noApp} <a href="${DOWNLOAD_URL}">${text.download}</a>.</p>
   </div>
   ${roomId ? `<script>location.href = ${JSON.stringify(deepLink)};</script>` : ""}
 </body>
@@ -201,7 +233,7 @@ export default {
     if (url.pathname === "/stats" || url.pathname === "/stats.json") {
       const summary = await env.STATS.get(env.STATS.idFromName("global")).summary();
       if (url.pathname === "/stats.json") return json(summary);
-      return new Response(statsPage(summary, ICON_SVG), {
+      return new Response(statsPage(summary, ICON_SVG, pageLanguage(request, url)), {
         headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
       });
     }
@@ -226,7 +258,7 @@ export default {
     const match = url.pathname.match(/^\/room\/([^/]+)$/);
     const roomId = match && ROOM_ID.test(match[1]) ? match[1] : null;
 
-    return new Response(landingPage(roomId), {
+    return new Response(landingPage(roomId, pageLanguage(request, url)), {
       headers: { "content-type": "text/html; charset=UTF-8", "cache-control": "no-store" }
     });
   }
