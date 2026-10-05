@@ -12,7 +12,7 @@
     "icon": "electron scripts/build-icon.mjs",
     "native": "scripts\\build-native.cmd",
     "dist": "electron-vite build && electron-builder --win --publish never",
-    "release": "electron-vite build && electron-builder --win --publish always"
+    "release": "electron-vite build && electron-builder --win --publish never && node scripts/release.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
