@@ -104,6 +104,7 @@ export function SettingsModal({ profile, server, onboarding, onClose, onSave }: 
         </div>
 
         <div className="modal-footer">
+          <span className="app-version">Janshare v{__APP_VERSION__}</span>
           {!onboarding && (
             <button type="button" className="btn btn-link" onClick={onClose}>
               Cancelar

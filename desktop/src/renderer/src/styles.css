@@ -1308,7 +1308,8 @@ kbd {
   transform: translateX(16px);
 }
 
-.golive-estimate {
+.golive-estimate,
+.app-version {
   margin-right: auto;
   font-size: 13px;
   color: var(--text-muted);
