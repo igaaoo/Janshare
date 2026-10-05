@@ -2,7 +2,7 @@
 
 Janshare: app desktop (Windows) de compartilhamento de tela P2P que substitui o screen share do Discord, com visual inspirado nele. 1 transmissor + até 7 espectadores por sala, sem voz. Cloudflare Worker + Durable Object fazem **apenas signaling**; o vídeo vai direto entre os PCs via WebRTC.
 
-Produção (signaling): https://webrtc-screen-share-mvp.scshare.workers.dev
+Produção (signaling): https://janshare.igaaoo.workers.dev
 
 ## Estrutura
 - `src/index.ts`: Worker + DO `Room` (signaling, `/ice-servers`, landing page que abre `janshare://`).
@@ -42,7 +42,7 @@ Para testar o app contra o Worker local, mude o servidor nas Configurações par
 - TURN: defina os secrets `TURN_KEY_ID` e `TURN_KEY_API_TOKEN` (Cloudflare Realtime TURN) com `wrangler secret put`; sem eles, `/ice-servers` devolve só STUN.
 - Áudio: o helper nativo `desktop/native/audio-capture.cpp` (process loopback do Windows 10 2004+) captura todo o som **exceto a árvore de processos do Discord** e escreve PCM s16le/estéreo/48 kHz no stdout. O main o roda por contagem de referências (`audio:start`/`audio:stop`) e repassa os chunks (`audio:chunk`); `lib/audio.ts` + `public/pcm-worklet.js` viram uma faixa WebRTC. Se o helper falhar, `capture()` cai no `loopback` do Chromium (todo o som) e avisa. O `.exe` fica versionado em `resources/`; recompile com `npm run native` (precisa do VS com C++). O helper sai sozinho quando o stdin fecha.
 - Ícone: fonte em `desktop/resources/icon.svg`; `npm run icon` (em `desktop/`) regera `resources/icon.png`, usado pelo instalador e pela janela. O favicon da landing page (`ICON_SVG` em `src/index.ts`) é uma cópia do SVG.
-- O app se chamava ScShare: o main copia `%APPDATA%\ScShare` para a pasta nova na primeira execução e o renderer renomeia as chaves `scshare.*` do `localStorage` para `janshare.*`. O subdomínio `scshare.workers.dev` é da conta Cloudflare e continua.
+- O app se chamava ScShare: o main copia `%APPDATA%\ScShare` para a pasta nova na primeira execução e o renderer renomeia as chaves `scshare.*` do `localStorage` para `janshare.*`. O servidor era `webrtc-screen-share-mvp.scshare.workers.dev`; `LEGACY_SERVERS` em `settings.ts` troca esse endereço salvo pelo novo.
 - Instalador sem assinatura de código: o SmartScreen avisa na primeira execução.
 - Estatísticas: o `hello` leva `install` (id aleatório da instalação, em `localStorage` `janshare.installId`) e `version` (`__APP_VERSION__`, definido no `electron.vite.config.ts`). O `Room` guarda país (header `x-janshare-country`, posto pelo Worker a partir de `request.cf`), início da sessão/transmissão/assistir no attachment e chama o `Stats` por RPC (`join`, `leave`, `streamStarted/Ended`, `watchStarted/Ended`) sem bloquear o signaling (`track`). Tudo são contadores incrementais; o resumo fica 5 min em cache na memória do `Stats` e só o "online agora" é recalculado a cada leitura. Nunca guardar nome, IP ou id de sala legível.
 - `wrangler.jsonc`: migrações `v1` (`Room`) e `v2` (`Stats`), ambas `new_sqlite_classes`. Para mudar uma classe, crie uma migração nova.

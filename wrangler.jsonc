@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "webrtc-screen-share-mvp",
+  "name": "janshare",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-02",
   "durable_objects": {

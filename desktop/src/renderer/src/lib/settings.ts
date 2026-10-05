@@ -1,6 +1,9 @@
 import { useCallback, useState } from "react";
 
-export const DEFAULT_SERVER = "https://webrtc-screen-share-mvp.scshare.workers.dev";
+export const DEFAULT_SERVER = "https://janshare.igaaoo.workers.dev";
+
+// Endereços antigos do servidor padrão: quem tem um deles salvo passa para o novo.
+const LEGACY_SERVERS = ["https://webrtc-screen-share-mvp.scshare.workers.dev"];
 
 export const AVATAR_COLORS = ["#5865f2", "#3ba55c", "#faa61a", "#ed4245", "#eb459e", "#00a8fc", "#9b84ee", "#747f8d"];
 
@@ -22,7 +25,9 @@ function load(): Settings {
     recentRooms: []
   };
   try {
-    return { ...fallback, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
+    const settings: Settings = { ...fallback, ...JSON.parse(localStorage.getItem(KEY) ?? "{}") };
+    if (LEGACY_SERVERS.includes(settings.server.replace(/\/+$/, ""))) settings.server = DEFAULT_SERVER;
+    return settings;
   } catch {
     return fallback;
   }
