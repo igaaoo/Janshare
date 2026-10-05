@@ -3,7 +3,7 @@
 App desktop para Windows que substitui o screen share do Discord: crie uma sala, mande o link e transmita. O vídeo vai direto de um PC para o outro (WebRTC). A Cloudflare só faz o signaling.
 
 ## Uso
-1. Instale `Janshare Setup x.y.z.exe` (gerado em `desktop/release/`).
+1. Instale `Janshare-Setup-x.y.z.exe` (gerado em `desktop/release/`).
 2. Escolha seu nome na primeira abertura.
 3. **Criar sala**: o link de convite é copiado automaticamente.
 4. Quem recebe o link clica nele: a página abre o app direto na sala (`janshare://`). Também dá para colar o link ou o código na tela inicial.

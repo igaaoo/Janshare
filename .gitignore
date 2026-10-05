@@ -2,3 +2,8 @@ node_modules/
 .wrangler/
 desktop/out/
 desktop/release/
+desktop/build/
+
+# Segredos locais (token do GitHub para npm run release etc.)
+.env
+*.env
