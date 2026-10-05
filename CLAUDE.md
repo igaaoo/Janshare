@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Janshare: app desktop (Windows) de compartilhamento de tela P2P que substitui o screen share do Discord, com visual inspirado nele. 1 transmissor + até 7 espectadores por sala, sem voz. Cloudflare Worker + Durable Object fazem **apenas signaling**; o vídeo vai direto entre os PCs via WebRTC.
+Janshare: app desktop (Windows) de compartilhamento de tela P2P para grupos pequenos de pessoas que se conhecem, gratuito e open source. 1 transmissor + até 7 espectadores por sala, sem voz. Cloudflare Worker + Durable Object fazem **apenas signaling**; o vídeo vai direto entre os PCs via WebRTC.
 
 Produção (signaling): https://janshare.igaaoo.workers.dev
 
@@ -25,7 +25,15 @@ Para testar o app contra o Worker local, mude o servidor nas Configurações par
 - Sem login/cadastro; perfil (nome, cor) e salas recentes ficam no `localStorage`.
 - O dono não participa das chamadas; nada pode depender de ele estar online.
 - A Cloudflare **não** transporta mídia quando houver P2P. TURN é só fallback (o ICE já prefere host/srflx).
-- Visual do Discord (paleta, layout rail/sidebar/stage, modal Go Live), mas **sem** logo, nome ou fonte gg sans do Discord.
+- Visual inspirado no Discord (paleta, layout rail/sidebar/stage, modal de transmissão), mas **sem** logo, nome ou fonte gg sans do Discord.
+- Salas só por convite: nunca criar busca, lista de salas públicas ou pareamento com desconhecidos.
+- Uso destinado a maiores de 18 anos (README, seção "Uso responsável").
+
+## Posicionamento (cuidado jurídico)
+Em agosto de 2026 a ANPD suspendeu no Brasil o Go Live, as chamadas de vídeo e o compartilhamento de tela do Discord com base no ECA Digital (Lei 15.211/2025, proteção de crianças e adolescentes; multas de até R$ 50 milhões). Por isso:
+- **Nunca** apresentar o Janshare como substituto do Discord, do Go Live ou como forma de contornar a suspensão (README, textos do app, landing page, releases, commits). Descrever como "compartilhamento de tela P2P para equipes e amigos".
+- Citar o Discord só quando for fato técnico (ex.: o áudio exclui o som do Discord).
+- Novos recursos que aumentem o alcance a desconhecidos (salas públicas, descoberta, chat com estranhos) exigem rever as obrigações do ECA Digital antes.
 
 ## Protocolo de signaling (JSON via WS `/ws/:roomId`)
 - Cliente → servidor: `hello {name,color,secret}` (primeiro envio; reenviar atualiza nome/cor, mas não a key). O servidor publica `key` = hash SHA-256 do `secret` em cada peer; o segredo nunca sai do servidor, `go-live`, `stop-live`, `"ping"` (texto puro; o DO responde `"pong"` via auto-response, sem acordar).
