@@ -292,7 +292,7 @@ export class Room extends DurableObject<Env> {
 
     this.ctx.acceptWebSocket(server);
 
-    if (this.ctx.getWebSockets().length > MAX_PEERS) {
+    if (this.ctx.getWebSockets().length > MAX_PEERS + 1) {
       server.send(JSON.stringify({ type: "error", code: "room-full", message: "A sala está cheia." }));
       server.close(4000, "room-full");
     } else {
@@ -328,6 +328,49 @@ export class Room extends DurableObject<Env> {
       if (info?.name && ws.readyState === WebSocket.OPEN) result.push({ ws, info });
     }
     return result;
+  }
+
+  private replacePreviousConnection(currentWs: WebSocket, key: string): void {
+    if (!key) return;
+
+    const previousConnections = this.peers().filter(
+        peer => peer.ws !== currentWs && peer.info.key === key
+    );
+
+    for (const { ws, info } of previousConnections) {
+      // Notifica os demais participantes que a conexão anterior saiu.
+      this.broadcast({ type: "peer-left", id: info.id }, ws);
+
+      // Encerra a transmissão anterior e as sessões dos espectadores.
+      this.endStream(ws, info);
+      this.endWatch(ws, info);
+
+      const seconds = Math.max(
+          0,
+          (Date.now() - info.joinedAt) / 1000
+      );
+
+      // Invalida a sessão antiga antes de fechar o WebSocket.
+      // Evita que a limpeza seja executada novamente em webSocketClose.
+      info.name = "";
+      info.live = false;
+      this.save(ws, info);
+
+      // Atualiza as estatísticas após remover a sessão antiga.
+      const online = this.peers().length;
+      this.track(stats =>
+          stats.leave({
+            room: this.ctx.id.toString(),
+            online,
+            seconds
+          })
+      );
+
+      // Fecha a conexão WebSocket que foi substituída.
+      try {
+        ws.close(4001, "session-replaced");
+      } catch {}
+    }
   }
 
   /** Registra um evento nas estatísticas sem atrasar nem derrubar o signaling. */
@@ -398,6 +441,20 @@ export class Room extends DurableObject<Env> {
         if (firstHello) {
           info.key = await keyFor(message.secret);
           info.joinedAt = Date.now();
+
+          // Substitui a conexão anterior da mesma sessão.
+          this.replacePreviousConnection(ws, info.key);
+
+          // Verifica o limite após remover a conexão antiga.
+          if (this.peers().length >= MAX_PEERS) {
+            ws.send(JSON.stringify({
+              type: "error",
+              code: "room-full",
+              message: "A sala está cheia."
+            }));
+            ws.close(4000, "room-full");
+            return;
+          }
         }
         ws.serializeAttachment(info);
 
